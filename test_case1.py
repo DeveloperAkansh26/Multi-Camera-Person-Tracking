@@ -9,8 +9,6 @@ from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from skimage import io
 from sklearn.model_selection import train_test_split
-from tqdm import tqdm
-import csv
 
 
 DATA_DIR = "/home/akansh_26/Hackathons/VisionX-AI/Person-Re-Id-Dataset/train"
