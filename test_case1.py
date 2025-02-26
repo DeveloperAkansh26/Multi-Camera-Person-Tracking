@@ -32,15 +32,11 @@ cam3 = cv2.VideoCapture(URL3)
 
 
 def main():
+
     while True:
         ret1, frame1 = cam1.read()
         ret2, frame2 = cam2.read()
         ret3, frame3 = cam3.read()
-
-        for i in range(2):
-            ret1, frame1 = cam1.read()
-            ret2, frame2 = cam2.read()
-            ret3, frame3 = cam3.read()
 
         if not ret1 or not ret2:
             break
@@ -52,7 +48,6 @@ def main():
         cv2.imshow("frame1", cv2.resize(annotated_frame1, (640, 320)))
         cv2.imshow("frame2", cv2.resize(annotated_frame2, (640, 320)))
         cv2.imshow("frame3", cv2.resize(annotated_frame3, (640, 320)))
-
 
         cv2.waitKey(1)
     cv2.destroyAllWindows()
