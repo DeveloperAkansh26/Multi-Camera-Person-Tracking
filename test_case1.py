@@ -11,14 +11,13 @@ from skimage import io
 from sklearn.model_selection import train_test_split
 
 
-DATA_DIR = "/home/akansh_26/Hackathons/VisionX-AI/Person-Re-Id-Dataset/train"
 DEVICE = "cuda"
 
 MAIN_ENCODING = None
 count = 0
-URL1 = "/home/akansh_26/Hackathons/VisionX-AI/CV Test Dataset/test_case_1/frame_1.mp4"
-URL2 = "/home/akansh_26/Hackathons/VisionX-AI/CV Test Dataset/test_case_1/frame 2.mp4"
-URL3 = "/home/akansh_26/Hackathons/VisionX-AI/CV Test Dataset/test_case_1/frame_3.mp4"
+URL1 = "test_case_1/frame_1.mp4"
+URL2 = "test_case_1/frame 2.mp4"
+URL3 = "test_case_1/frame_3.mp4"
 
 
 model_yolo1 = YOLO("yolo11s.pt")
@@ -27,9 +26,13 @@ cam1 = cv2.VideoCapture(URL1)
 model_yolo2 = YOLO("yolo11s.pt")
 cam2 = cv2.VideoCapture(URL2)
 cam3 = cv2.VideoCapture(URL3)
+prev_gray = None
+prev_box = None
 
 
 def main():
+
+    global prev_gray, prev_box
 
     while True:
         ret1, frame1 = cam1.read()
@@ -39,15 +42,54 @@ def main():
         if not ret1 or not ret2:
             break
 
-        annotated_frame1 = process_frame(frame1, model_yolo1, 1)
-        annotated_frame2 = process_frame(frame2, model_yolo2, 2)
-        annotated_frame3 = process_frame(frame3, model_yolo2, 2)
+        # Convert to gray for optical flow
+        gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
 
+        if prev_gray is not None and prev_box is not None:
+            # Compute optical flow
+            flow = cv2.calcOpticalFlowFarneback(prev_gray, gray1, None,
+                                                0.5, 3, 15, 3, 5, 1.2, 0)
+
+            # Shift the previous box using average flow inside it
+            x1, y1, x2, y2 = map(int, prev_box)
+            dx_sum = dy_sum = count_valid = 0
+            for y in range(y1, y2, 5):
+                for x in range(x1, x2, 5):
+                    if y >= flow.shape[0] or x >= flow.shape[1]: continue
+                    dx, dy = flow[y, x]
+                    dx_sum += dx
+                    dy_sum += dy
+                    count_valid += 1
+
+            if count_valid > 0:
+                avg_dx = dx_sum / count_valid
+                avg_dy = dy_sum / count_valid
+                prev_box = [x1 + avg_dx, y1 + avg_dy, x2 + avg_dx, y2 + avg_dy]
+
+            # Draw shifted box
+            new_x1, new_y1, new_x2, new_y2 = map(int, prev_box)
+            cv2.rectangle(frame1, (new_x1, new_y1), (new_x2, new_y2), (255, 0, 0), 2)
+            cv2.putText(frame1, f"ID:{1} (Tracked)", (new_x1, new_y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+
+        # Run detection (and possibly overwrite prev_box)
+        annotated_frame1, updated_box = process_frame(frame1, model_yolo1, 1)
+
+        # If new detection found (updated_box is not None), update tracking
+        if updated_box is not None:
+            prev_box = updated_box
+
+        # Update prev_gray for next flow computation
+        prev_gray = gray1.copy()
+
+        # Show frames
         cv2.imshow("frame1", cv2.resize(annotated_frame1, (640, 320)))
-        cv2.imshow("frame2", cv2.resize(annotated_frame2, (640, 320)))
-        cv2.imshow("frame3", cv2.resize(annotated_frame3, (640, 320)))
+        cv2.imshow("frame2", cv2.resize(frame2, (640, 320)))
+        cv2.imshow("frame3", cv2.resize(frame3, (640, 320)))
 
-        cv2.waitKey(1)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
     cv2.destroyAllWindows()
 
 
@@ -89,7 +131,6 @@ def process_frame(frame, model_yolo, camera_number):
                     dist = euclidean_dist(i, person_enc)
                     distance.append(dist)
                 
-                print(distance)
                 dist = min(distance)
 
                 threshold = 3
@@ -103,6 +144,7 @@ def process_frame(frame, model_yolo, camera_number):
         pt2 = (int(x2), int(y2))
         cv2.rectangle(frame, pt1, pt2, color=(0, 255, 0), thickness=2)
         cv2.putText(frame, f"ID:{1}", (int(x1), int(y1)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        return frame, [x1,y1,x2,y2]
     else:
         try:
             idx = np.argmin(distances_across)
@@ -111,10 +153,11 @@ def process_frame(frame, model_yolo, camera_number):
             pt2 = (int(x2), int(y2))
             cv2.rectangle(frame, pt1, pt2, color=(0, 255, 0), thickness=2)
             cv2.putText(frame, f"ID:{1}", (int(x1), int(y1)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            return frame, [x1,y1,x2,y2]
         except:
             pass
 
-    return frame
+    return frame, None
 
 
 class APN_Model(nn.Module):
